@@ -1,0 +1,44 @@
+# CAG Framework Configuration
+
+# Cache settings
+cache:
+  type: in_memory  # Options: in_memory, redis
+  max_size: 1000
+  redis:  # Optional, only needed if type is 'redis'
+    host: localhost
+    port: 6379
+    db: 0
+
+# Embedding model settings
+embedding:
+  type: sentence_transformers  # Options: sentence_transformers, openai
+  model_name: all-MiniLM-L6-v2
+  batch_size: 32
+  openai:  # Optional, only needed if type is 'openai'
+    api_key: ${OPENAI_API_KEY}  # Environment variable reference
+    model: text-embedding-3-small
+
+# LLM settings
+llm:
+  type: huggingface  # Options: huggingface, openai
+  api_key: ${HUGGINGFACE_API_KEY}  # Environment variable reference
+  model_endpoint: https://api-inference.huggingface.co/models/mistralai/Mistral-7B-v0.1
+  timeout: 30
+  max_length: 2048
+  temperature: 0.7
+  openai:  # Optional, only needed if type is 'openai'
+    model: gpt-3.5-turbo
+    max_tokens: 2048
+
+# Similarity settings
+similarity:
+  metric: cosine  # Options: cosine, euclidean
+  threshold: 0.8
+  euclidean:  # Optional, only needed if metric is 'euclidean'
+    sigma: 1.0
+
+# Monitoring settings (optional)
+monitoring:
+  enabled: true
+  type: console  # Options: console, custom
+  log_level: INFO
