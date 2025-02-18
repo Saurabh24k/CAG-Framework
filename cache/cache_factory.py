@@ -1,9 +1,9 @@
 # cache_factory.py
 from typing import Optional, Dict, Any
-
-from .abstract_cache import AbstractCache
+from .abstract_cache import AbstractCache, CacheError
 from .in_memory_cache import InMemoryCache
 from .redis_cache import RedisCache
+
 
 
 class CacheFactory:
@@ -29,7 +29,7 @@ class CacheFactory:
 
         cache_type = cache_type.lower() # Normalize cache type string
 
-        if cache_type == "in-memory":
+        if cache_type == "in_memory":
             max_size = cache_config.get("max_size", 100)  # Default max_size if not in config
             if not isinstance(max_size, int):
                 raise TypeError(f"Invalid 'max_size' in cache config. Must be an integer, but got: {type(max_size)}")

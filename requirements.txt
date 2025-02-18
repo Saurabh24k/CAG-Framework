@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+numpy
+openai  # For future use (can be removed if not needed)
+redis
+requests
+pydantic
+scikit-learn
+sentence-transformers
+python-dotenv
+pytest  # For testing purposes
+httpx  # Required for FastAPI test clients

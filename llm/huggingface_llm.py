@@ -4,6 +4,8 @@ import logging
 from typing import Dict, Any, Tuple, Optional
 import requests
 from requests.exceptions import RequestException, Timeout
+import os
+from dotenv import load_dotenv
 
 from .abstract_llm import (
     LLMInterface,
@@ -13,6 +15,11 @@ from .abstract_llm import (
     LLMRateLimitError,
 )
 
+# Load environment variables from .env
+load_dotenv()
+print("DEBUG: Hugging Face API Key ->", os.getenv("HUGGINGFACE_API_KEY"))
+
+# Set up logging
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +33,10 @@ class HuggingFaceLLM(LLMInterface):
         timeout: int = 30,
         max_length: int = 2048,
     ):
+        self.api_key = os.getenv("HUGGINGFACE_API_KEY")
+        if not self.api_key:
+            raise ValueError("Hugging Face API Key is missing. Set HUGGINGFACE_API_KEY in your environment.")
+        self.headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         """Initialize the HuggingFace LLM client.
 
         Args:

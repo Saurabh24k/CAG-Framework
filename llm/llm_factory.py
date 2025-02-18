@@ -1,7 +1,6 @@
 # llm_factory.py
 from typing import Optional, Dict, Any
-
-from .abstract_llm import LLMInterface
+from .abstract_llm import LLMInterface, LLMError
 from .huggingface_llm import HuggingFaceLLM
 from .openai_llm import OpenAILLM
 

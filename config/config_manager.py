@@ -279,6 +279,15 @@ class ConfigManager:
         """
         return self._config.get('similarity', {})
 
+    def get_monitoring_config(self) -> Dict[str, Any]:
+        """Retrieve the entire 'monitoring' section of the configuration.
+    
+        Returns:
+            Dict[str, Any]: Dictionary containing the configuration settings for monitoring.
+                            Returns an empty dictionary if the 'monitoring' section is not found.
+        """
+        return self._config.get('monitoring', {})
+
 
     def reload(self) -> None:
         """Reload the configuration from the configuration file.

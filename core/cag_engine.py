@@ -42,7 +42,7 @@ class CAGEngine:
         Args:
             config_path: Optional path to the configuration YAML file. If None, it will try to
                         find 'config.yaml' in standard locations.
-        
+
         Raises:
             CAGEngineError: If any part of the initialization process fails.
         """
@@ -127,14 +127,14 @@ class CAGEngine:
 
     def _create_similarity_metric(self, metric_type: str, config: Dict[str, Any]) -> SimilarityMetric:
         """Create and configure a SimilarityMetric instance.
-        
+
         Args:
             metric_type: String identifier for the similarity metric ('cosine' or 'euclidean').
             config: Dictionary containing the similarity configuration.
-        
+
         Returns:
             SimilarityMetric: Configured similarity metric instance.
-        
+
         Raises:
             ValueError: If metric_type is not supported.
         """
@@ -153,31 +153,34 @@ class CAGEngine:
     @lru_cache(maxsize=1)
     def _normalize_query(self, query: str) -> str:
         """Normalize the input query string for consistent cache lookups.
-        
+
         Args:
             query: The original user query string.
-        
+
         Returns:
             str: The normalized query string.
         """
         return query.strip().lower()
 
     def _find_similar_query(
-        self, query_embedding: np.ndarray, cached_queries: List[str]
+        self, query_embedding: np.ndarray
     ) -> Tuple[Optional[str], float]:
         """Find the most semantically similar query from the cache.
-        
+
         Args:
             query_embedding: NumPy array representing the embedding vector of the current query.
-            cached_queries: List of query strings currently stored in the cache.
-        
+
         Returns:
             Tuple[Optional[str], float]: The most similar cached query and its similarity score.
         """
+        cached_queries: List[str] = self.cache.get_keys() # Get all cached query keys
         if not cached_queries:
             return None, 0.0
 
-        cached_embeddings: List[np.ndarray] = self.cache.get_embeddings_batch(cached_queries)
+        cached_embeddings: List[np.ndarray] = self.cache.get_embeddings_batch(cached_queries) # Get embeddings for all cached queries
+        if not cached_embeddings: # Handle case where no embeddings are in cache, but keys exist (though unlikely if cache is used correctly)
+            return None, 0.0
+
         similarities: np.ndarray = self.similarity_metric.calculate_similarities(
             query_embedding, cached_embeddings
         )
@@ -194,86 +197,110 @@ class CAGEngine:
             return best_match_query, best_match_score
         return None, 0.0
 
+
+    def generate_response(self, normalized_query: str) -> Tuple[str, str]:
+        """Process a normalized user query using the Cache-Augmented Generation pipeline and return raw response without prefix.
+
+        Args:
+            normalized_query: The normalized user query string.
+
+        Returns:
+            Tuple[str, str]: Tuple containing the response string and the cache status ('Hit' or 'Miss').
+
+        Raises:
+            CAGEngineError: If any error occurs during query processing.
+        """
+        start_time = time.time()
+        # 1. Check for Exact Cache Hit
+        cached_response: Optional[str] = self.cache.get(normalized_query)
+        if cached_response is not None:
+            logger.info("Exact cache hit for query: '%s'", normalized_query)
+            if self.monitoring:  # Check if monitoring is enabled
+                self.monitoring.increment_cache_hits()  # Increment cache hits
+                self.monitoring.record_response_time(time.time() - start_time)  # Record response time (cache lookup time is negligible)
+            return cached_response, "ExactHit"
+
+        # 2. Generate Embedding for Query
+        query_embedding: np.ndarray = self.embedding_model.generate_embedding(normalized_query)
+        logger.debug(
+            f"Generated embedding for query: '{normalized_query[:50]}...', "
+            f"shape: {query_embedding.shape}"
+        )
+
+        # 3. Check for Semantic Cache Match
+        similar_query, similarity_score = self._find_similar_query(query_embedding)
+
+        if similar_query is not None:
+            cached_response = self.cache.get(similar_query)
+            logger.info(
+                "Semantic cache hit for query: '%s' (matched: '%s', score: %.3f)",
+                normalized_query, similar_query, similarity_score
+            )
+            if self.monitoring:  # Check if monitoring is enabled
+                self.monitoring.increment_semantic_hits()  # Increment semantic hits
+                self.monitoring.record_response_time(time.time() - start_time)  # Record response time
+            return cached_response, "SemanticHit"
+
+        # 4. Query LLM for Response (Cache Miss)
+        logger.info("Cache miss (exact & semantic), querying LLM for: '%s'", normalized_query)
+        llm_response: str = ""
+        metadata: Dict[str, Any] = {}
+        llm_start_time = time.time()  # Start time for LLM query
+        llm_response, metadata = self.llm.query(normalized_query)
+        llm_end_time = time.time()  # End time for LLM query
+        llm_response_time = llm_end_time - llm_start_time  # LLM query time
+        logger.debug(
+            f"LLM response received for query: '{normalized_query[:50]}...', "
+            f"response[:50]: '{llm_response[:50]}...', LLM response time: {llm_response_time:.3f}s"
+        )
+
+        # 5. Cache the LLM Response with Embedding
+        self.cache.add(
+            normalized_query, llm_response, embedding=query_embedding
+        )  # Store embedding along with response
+        logger.debug(f"Response cached for query: '{normalized_query[:50]}...'")
+
+        if self.monitoring:  # Check if monitoring is enabled
+            self.monitoring.increment_cache_misses()  # Increment cache misses
+            self.monitoring.record_response_time(time.time() - start_time)  # Record total response time
+
+        # 6. Return LLM Response (Cache Miss)
+        return llm_response, "Miss" # Indicate cache miss
+
+
+
     def query(self, user_query: str) -> str:
         """Process a user query using the Cache-Augmented Generation pipeline.
-        
+
         Args:
             user_query: The original user query string.
-        
+
         Returns:
             str: The response string, prefixed with cache status.
-        
+
         Raises:
             CAGEngineError: If any error occurs during query processing.
         """
         try:
-            start_time = time.time()
 
             # 1. Normalize Query
             normalized_query: str = self._normalize_query(user_query)
             logger.debug(f"Normalized query: '{normalized_query}'")
 
-            # 2. Check for Exact Cache Hit
-            cached_response: Optional[str] = self.cache.get(normalized_query)
-            if cached_response is not None:
-                logger.info("Exact cache hit for query: '%s'", normalized_query)
-                if self.monitoring: # Check if monitoring is enabled
-                    self.monitoring.increment_cache_hits() # Increment cache hits
-                    self.monitoring.record_response_time(time.time() - start_time) # Record response time (cache lookup time is negligible)
-                return f"Cache Hit! {cached_response}"
+            llm_response, cache_status = self.generate_response(normalized_query)
 
-            # 3. Generate Embedding for Query
-            query_embedding: np.ndarray = self.embedding_model.generate_embedding(normalized_query)
-            logger.debug(
-                f"Generated embedding for query: '{normalized_query[:50]}...', "
-                f"shape: {query_embedding.shape}"
-            )
+            if cache_status == "ExactHit":
+                return f"Cache Hit! {llm_response}"
+            elif cache_status == "SemanticHit":
+                return f"Semantic Cache Hit! {llm_response}"
+            elif cache_status == "Miss":
+                return f"Cache Miss! {llm_response}"
+            else: # Should not reach here, but for safety
+                return llm_response
 
-            # 4. Check for Semantic Cache Match
-            cached_queries: List[str] = self.cache.get_keys()
-            similar_query, similarity_score = self._find_similar_query(
-                query_embedding, cached_queries
-            )
 
-            if similar_query is not None:
-                cached_response = self.cache.get(similar_query)
-                logger.info(
-                    "Semantic cache hit for query: '%s' (matched: '%s', score: %.3f)",
-                    normalized_query, similar_query, similarity_score
-                )
-                if self.monitoring: # Check if monitoring is enabled
-                    self.monitoring.increment_semantic_hits() # Increment semantic hits
-                    self.monitoring.record_response_time(time.time() - start_time) # Record response time
-                return f"Semantic Cache Hit! {cached_response}"
-
-            # 5. Query LLM for Response (Cache Miss)
-            logger.info("Cache miss (exact & semantic), querying LLM for: '%s'", normalized_query)
-            llm_response: str = ""
-            metadata: Dict[str, Any] = {}
-            llm_start_time = time.time() # Start time for LLM query
-            llm_response, metadata = self.llm.query(normalized_query)
-            llm_end_time = time.time() # End time for LLM query
-            llm_response_time = llm_end_time - llm_start_time # LLM query time
-            logger.debug(
-                f"LLM response received for query: '{normalized_query[:50]}...', "
-                f"response[:50]: '{llm_response[:50]}...', LLM response time: {llm_response_time:.3f}s"
-            )
-
-            # 6. Cache the LLM Response
-            self.cache.add(
-                normalized_query, llm_response, embedding=query_embedding
-            )
-            logger.debug(f"Response cached for query: '{normalized_query[:50]}...'")
-
-            if self.monitoring: # Check if monitoring is enabled
-                self.monitoring.increment_cache_misses() # Increment cache misses
-                self.monitoring.record_response_time(time.time() - start_time) # Record total response time
-
-            # 7. Return LLM Response (Cache Miss)
-            return f"Cache Miss! {llm_response}"
-
-        except CAGEngineError:
-            raise
+        except CAGEngineError as e:
+            raise e # Re-raise CAGEngineError directly
         except CacheError as e:
             logger.error(f"Cache error during query processing: {e}")
             raise CAGEngineError(f"Cache operation failed: {e}") from e
@@ -287,9 +314,10 @@ class CAGEngine:
             logger.critical(f"Unexpected error during query processing: {e}", exc_info=True)
             raise CAGEngineError(f"Unexpected error during query processing: {e}") from e
 
+
     def refresh_cache(self) -> None:
         """Clear the entire cache.
-        
+
         Raises:
             CAGEngineError: If there's an error during the cache clearing process.
         """
@@ -302,3 +330,4 @@ class CAGEngine:
         except Exception as e:
             logger.critical(f"Unexpected error during cache clearing: {e}", exc_info=True)
             raise CAGEngineError(f"Unexpected error during cache refresh: {e}") from e
+

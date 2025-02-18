@@ -1,7 +1,9 @@
 # in_memory_cache.py
 import time
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
+
+import numpy as np
 
 from .abstract_cache import AbstractCache
 
@@ -30,7 +32,7 @@ class InMemoryCache(AbstractCache):
         """
         return key.strip().lower()
 
-    def add(self, key: str, value: Any, embedding: Optional[Any] = None) -> None:
+    def add(self, key: str, value: Any, embedding: Optional[np.ndarray] = None) -> None:
         """Add an item to the cache. Evicts LRU item if cache is full."""
         normalized_key = self._normalize_key(key)
         with self._lock:
@@ -53,11 +55,22 @@ class InMemoryCache(AbstractCache):
                 return cache_entry["response"]
             return None
 
-    def get_embedding(self, key: str) -> Optional[Any]:
+    def get_embedding(self, key: str) -> Optional[np.ndarray]:
         """Retrieve the embedding for a cached item."""
         normalized_key = self._normalize_key(key)
         with self._lock:
             return self._cache.get(normalized_key, {}).get("embedding", None)
+
+    def get_embeddings_batch(self, keys: List[str]) -> List[np.ndarray]:
+        """Retrieve a batch of embeddings for given keys."""
+        with self._lock:
+            return [self.get_embedding(key) for key in keys] # Returns list of embeddings, None if not found
+
+    def get_keys(self) -> List[str]:
+        """Retrieve all keys currently in the cache."""
+        with self._lock:
+            return list(self._cache.keys())
+
 
     def clear(self) -> None:
         """Remove all items from the cache."""

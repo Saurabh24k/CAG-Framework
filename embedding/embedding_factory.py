@@ -1,9 +1,9 @@
 # embedding_factory.py
 from typing import Optional, Dict, Any
-
-from .abstract_embedding import EmbeddingModel
+from .abstract_embedding import EmbeddingModel, EmbeddingError
 from .sentence_transformers_embedding import SentenceTransformersEmbeddingModel
 from .openai_embedding import OpenAIEmbeddingModel
+
 
 
 class EmbeddingFactory:
@@ -31,7 +31,7 @@ class EmbeddingFactory:
 
         model_type = model_type.lower() # Normalize model type string
 
-        if model_type == "sentence-transformers":
+        if model_type == "sentence_transformers":
             model_name = embedding_config.get("model_name", "all-MiniLM-L6-v2")
             return SentenceTransformersEmbeddingModel(model_name=model_name)
 

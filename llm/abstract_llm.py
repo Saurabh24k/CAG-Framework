@@ -8,6 +8,10 @@ logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s -
 logger = logging.getLogger(__name__)
 
 
+class LLMError(Exception):
+    """Base exception for LLM-related errors."""
+    pass
+
 class LLMInterface(ABC):
     """Abstract base class for LLM implementations."""
 

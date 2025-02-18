@@ -3,6 +3,10 @@ from abc import ABC, abstractmethod
 import numpy as np
 from typing import List, Optional, Union, Tuple
 
+class EmbeddingError(Exception):
+    """Base exception for embedding-related errors."""
+    pass
+
 class EmbeddingModel(ABC):
     """Abstract base class for embedding models."""
 
